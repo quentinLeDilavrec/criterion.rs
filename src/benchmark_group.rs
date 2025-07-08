@@ -25,7 +25,7 @@ use std::time::Duration;
 ///     // Now we can perform benchmarks with this group
 ///     group.bench_function("Bench 1", |b| b.iter(|| 1 ));
 ///     group.bench_function("Bench 2", |b| b.iter(|| 2 ));
-///    
+///
 ///     // It's recommended to call group.finish() explicitly at the end, but if you don't it will
 ///     // be called automatically when the group is dropped.
 ///     group.finish();
@@ -45,13 +45,13 @@ use std::time::Duration;
 ///                 |b, (p_x, p_y)| b.iter(|| p_x * p_y));
 ///         }
 ///     }
-///    
+///
 ///     group.finish();
 /// }
 ///
 /// fn bench_throughput(c: &mut Criterion) {
 ///     let mut group = c.benchmark_group("Summation");
-///     
+///
 ///     for size in [1024, 2048, 4096].iter() {
 ///         // Generate input of an appropriate size...
 ///         let input = vec![1u64, *size];
@@ -250,7 +250,14 @@ impl<'a, M: Measurement> BenchmarkGroup<'a, M> {
     where
         F: FnMut(&mut Bencher<'_, M>),
     {
-        self.run_bench(id.into_benchmark_id(), &(), |b, _| f(b));
+        let id = id.into_benchmark_id();
+        let id = InternalBenchmarkId::new(
+            self.group_name.clone(),
+            id.function_name,
+            id.parameter,
+            self.throughput.clone(),
+        );
+        self.run_bench(id, &(), |b, _| f(b));
         self
     }
 
@@ -265,11 +272,51 @@ impl<'a, M: Measurement> BenchmarkGroup<'a, M> {
         F: FnMut(&mut Bencher<'_, M>, &I),
         I: ?Sized,
     {
-        self.run_bench(id.into_benchmark_id(), input, f);
+        let id = id.into_benchmark_id();
+        let id = InternalBenchmarkId::new(
+            self.group_name.clone(),
+            id.function_name,
+            id.parameter,
+            self.throughput.clone(),
+        );
+        self.run_bench(id, input, f);
         self
     }
 
-    fn run_bench<F, I>(&mut self, id: BenchmarkId, input: &I, f: F)
+    /// Benchmark the given parameterized function inside this benchmark group.
+    pub fn bench_with_input_prepared<ID: IntoBenchmarkId, F, I, P>(
+        &mut self,
+        id: ID,
+        input: &mut I,
+        mut prep: impl FnMut(&mut Self, &mut I) -> P,
+        f: F,
+    ) -> &mut Self
+    where
+        F: FnMut(&mut Bencher<'_, M>, &(&I, &P)),
+    {
+        let id = id.into_benchmark_id();
+        let id = InternalBenchmarkId::new(
+            self.group_name.clone(),
+            id.function_name,
+            id.parameter,
+            self.throughput.clone(),
+        );
+        if !self.criterion.filter_matches(id.id()) {
+            if let Mode::Benchmark = &self.criterion.mode {
+                if let Some(conn) = &self.criterion.connection {
+                    conn.send(&OutgoingMessage::SkippingBenchmark { id: (&id).into() })
+                        .unwrap();
+                }
+            }
+            self.all_ids.push(id);
+            return self;
+        }
+        let p = prep(self, input);
+        self.run_bench(id, &(&*input, &p), f);
+        self
+    }
+
+    fn run_bench<F, I>(&mut self, mut id: InternalBenchmarkId, input: &I, f: F)
     where
         F: FnMut(&mut Bencher<'_, M>, &I),
         I: ?Sized,
@@ -279,13 +326,6 @@ impl<'a, M: Measurement> BenchmarkGroup<'a, M> {
             output_directory: self.criterion.output_directory.clone(),
             plot_config: self.partial_config.plot_config.clone(),
         };
-
-        let mut id = InternalBenchmarkId::new(
-            self.group_name.clone(),
-            id.function_name,
-            id.parameter,
-            self.throughput.clone(),
-        );
 
         assert!(
             !self.all_ids.contains(&id),
