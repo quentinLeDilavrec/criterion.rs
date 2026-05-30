@@ -6,8 +6,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
-## [0.6.0] - 2025-05-17
+- MSRV bumped to 1.70
+- Fixed plotting bug when all samples' measurements have the same value. See [#720](https://github.com/bheisler/criterion.rs/issues/720).
 
 ### Changed
 - MSRV bumped to 1.80
