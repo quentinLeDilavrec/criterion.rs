@@ -295,7 +295,7 @@ impl<'a, M: Measurement> BenchmarkGroup<'a, M> {
         F: FnMut(&mut Bencher<'_, M>, &(&I, &P)),
     {
         let id = id.into_benchmark_id();
-        let id = InternalBenchmarkId::new(
+        let mut id = InternalBenchmarkId::new(
             self.group_name.clone(),
             id.function_name,
             id.parameter,
@@ -312,7 +312,36 @@ impl<'a, M: Measurement> BenchmarkGroup<'a, M> {
             return self;
         }
         let p = prep(self, input);
+        if let Some(throughput) = &self.throughput {
+            if id.throughput.as_ref() != Some(throughput) {
+                id.throughput = Some(throughput.clone());
+            }
+        }
         self.run_bench(id, &(&*input, &p), f);
+
+        self
+    }
+
+    /// Only summarize the benchmark results, without running the benchmark.
+    pub fn only_resumarize<ID: IntoBenchmarkId>(&mut self, id: ID) -> &mut Self {
+        let id = id.into_benchmark_id();
+        let id = InternalBenchmarkId::new(
+            self.group_name.clone(),
+            id.function_name,
+            id.parameter,
+            self.throughput.clone(),
+        );
+        self.any_matched = true;
+        if !self.criterion.filter_matches(id.id()) {
+            if let Mode::Benchmark = &self.criterion.mode {
+                if let Some(conn) = &self.criterion.connection {
+                    conn.send(&OutgoingMessage::SkippingBenchmark { id: (&id).into() })
+                        .unwrap();
+                }
+            }
+            self.all_ids.push(id);
+            return self;
+        }
         self
     }
 
@@ -403,6 +432,23 @@ impl<'a, M: Measurement> BenchmarkGroup<'a, M> {
     /// group is dropped.
     pub fn finish(self) {
         ::std::mem::drop(self);
+    }
+    /// Consume the benchmark group and generate the summary reports for the group, saving a duplicate summary to a different location.
+    ///
+    /// appends `alt_name` to the group name to create the output path such that we obtain `output_dir/report_{alt_name}`.
+    pub fn finish_with_alt_summary_save(self, alt_name: &str) {
+        let dir = self.criterion.output_directory.join(&self.group_name);
+        ::std::mem::drop(self);
+        let default_path = dir.join("report");
+        let alt_path = dir.join(format!("report_{alt_name}"));
+        try_else_return!(crate::fs::mkdirp(&alt_path), || { panic!() });
+        for entry in default_path.read_dir().unwrap() {
+            let entry = entry.unwrap();
+            let default_path = entry.path();
+            let path = alt_path.join(entry.file_name());
+            try_else_return!(crate::fs::cp(&default_path, &path), || { panic!() });
+        }
+        info!("Saved alt summary to {}", alt_path.display())
     }
 }
 impl<'a, M: Measurement> Drop for BenchmarkGroup<'a, M> {
