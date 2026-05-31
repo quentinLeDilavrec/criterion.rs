@@ -756,9 +756,22 @@ impl Html {
 
         let value_types: Vec<_> = data.iter().map(|&&(id, _)| id.value_type()).collect();
         let mut line_path = None;
-
+        let no_value_type_data = data
+            .iter()
+            .filter(|&&(id, _)| id.value_type().is_none())
+            .collect::<Vec<_>>();
+        if !no_value_type_data.is_empty() {
+            error!("data points forbibing line plot {:?}", &no_value_type_data);
+        }
         if value_types.iter().all(|x| x == &value_types[0]) {
             if let Some(value_type) = value_types[0] {
+                let nan_data = data
+                    .iter()
+                    .filter(|&&(id, _)| id.as_number().is_none())
+                    .collect::<Vec<_>>();
+                if !nan_data.is_empty() {
+                    error!("data points forbibing line plot {:?}", &nan_data);
+                }
                 let values: Vec<_> = data.iter().map(|&&(id, _)| id.as_number()).collect();
                 if values.iter().any(|x| x != &values[0]) {
                     self.plotter
