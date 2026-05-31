@@ -359,6 +359,10 @@ pub struct Criterion<M: Measurement = WallTime> {
     profiler: Box<RefCell<dyn Profiler>>,
     connection: Option<MutexGuard<'static, Connection>>,
     mode: Mode,
+    #[doc(hidden)]
+    pub resummarize: bool, // TODO consider making it a Mode
+    #[doc(hidden)]
+    pub throughput: String,
 }
 
 /// Returns the Cargo target directory, possibly calling `cargo metadata` to
@@ -429,6 +433,8 @@ impl Default for Criterion {
                 .as_ref()
                 .map(|mtx| mtx.lock().unwrap()),
             mode: Mode::Benchmark,
+            resummarize: false,
+            throughput: "".to_owned(),
         };
 
         if criterion.connection.is_some() {
@@ -461,6 +467,8 @@ impl<M: Measurement> Criterion<M> {
             profiler: self.profiler,
             connection: self.connection,
             mode: self.mode,
+            resummarize: self.resummarize,
+            throughput: self.throughput.clone(),
         }
     }
 
@@ -817,6 +825,13 @@ impl<M: Measurement> Criterion<M> {
                 .long("exact")
                 .num_args(0)
                 .help("Run benchmarks that exactly match the provided filter"))
+            .arg(Arg::new("resummarize")
+                .long("resummarize")
+                .num_args(0)
+                .help("Resummarize the results of a previous run"))
+            .arg(Arg::new("throughput")
+                .long("throughput")
+                .help("Choose the throughput that must be used for summaries"))
             .arg(Arg::new("profile-time")
                 .long("profile-time")
                 .value_parser(value_parser!(f64))
@@ -1119,6 +1134,15 @@ https://bheisler.github.io/criterion.rs/book/faq.html
 
         if matches.get_flag("quick") {
             self.config.quick_mode = true;
+        }
+
+        if matches.get_flag("resummarize") {
+            self.resummarize = true;
+            self.filter = BenchmarkFilter::RejectAll;
+        }
+
+        if let Some(throughput) = matches.get_one::<String>("throughput") {
+            self.throughput = throughput.clone();
         }
 
         self
