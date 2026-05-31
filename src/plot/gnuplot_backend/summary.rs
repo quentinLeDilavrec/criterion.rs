@@ -110,8 +110,10 @@ pub fn line_comparison(
                 .set(COMPARISON_COLORS[i % NUM_COLORS])
         })
         .plot(Points { x: &xs, y: &ys }, |p| {
-            p.set(PointType::FilledCircle)
-                .set(POINT_SIZE)
+            let mut point_size = POINT_SIZE;
+            point_size.0 *= 2.0;
+            p.set(PointType::Plus)
+                .set(point_size)
                 .set(COMPARISON_COLORS[i % NUM_COLORS])
         });
 

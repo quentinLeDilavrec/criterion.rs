@@ -58,7 +58,7 @@ fn regression_figure(
                 c.set(DARK_BLUE)
                     .set(Label("Sample"))
                     .set(PointSize(0.5))
-                    .set(PointType::FilledCircle)
+                    .set(PointType::Plus)
             },
         )
         .plot(
